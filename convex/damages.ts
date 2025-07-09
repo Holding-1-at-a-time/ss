@@ -240,6 +240,10 @@ export const addDamageAnnotation = mutation({
 
     // Step 3: Validate bounding box coordinates
     if (
+      isNaN(args.boundingBox.x) ||
+      isNaN(args.boundingBox.y) ||
+      isNaN(args.boundingBox.width) ||
+      isNaN(args.boundingBox.height) ||
       args.boundingBox.x < 0 ||
       args.boundingBox.x > 1 ||
       args.boundingBox.y < 0 ||

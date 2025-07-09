@@ -353,4 +353,22 @@ export default defineSchema({
     .index("by_tenant_booking", ["tenantId", "bookingId"])
     .index("by_tenant_status", ["tenantId", "status"])
     .index("by_tenant_type", ["tenantId", "type"]),
+
+  searchLogs: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    queryText: v.string(),
+    filters: v.optional(v.any()),
+    resultCount: v.number(),
+    executionTime: v.number(), // milliseconds
+    userAction: v.optional(v.string()), // "clicked", "refined", "abandoned"
+    timestamp: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_timestamp", ["tenantId", "timestamp"])
+    .searchIndex("search_by_tenant", {
+      searchField: "queryText",
+      filterFields: ["tenantId"],
+    }),
 })

@@ -1,7 +1,7 @@
 import { v } from "convex/values"
 import { mutation, action } from "./_generated/server"
 import { getCurrentUser } from "./auth"
-import { api } from "./_generated/api" // Declare the api variable
+import { api } from "./_generated/api"
 
 // Create inspection embedding
 export const createInspectionEmbedding = mutation({
@@ -93,6 +93,54 @@ export const createDamageEmbedding = mutation({
 
     // Update damage with embedding reference
     await ctx.db.patch(args.damageId, {
+      embeddingId,
+      updatedAt: Date.now(),
+    })
+
+    return embeddingId
+  },
+})
+
+// Create estimate embedding
+export const createEstimateEmbedding = mutation({
+  args: {
+    estimateId: v.id("estimates"),
+    inspectionId: v.id("inspections"),
+    embedding: v.array(v.float64()),
+    contentType: v.union(v.literal("service_description"), v.literal("pricing_context"), v.literal("line_items")),
+    metadata: v.object({
+      serviceType: v.string(),
+      totalAmount: v.number(),
+      laborHours: v.number(),
+      vehicleMake: v.string(),
+      vehicleModel: v.string(),
+      damageCount: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    // Verify estimate belongs to tenant
+    const estimate = await ctx.db.get(args.estimateId)
+    if (!estimate || estimate.tenantId !== user.tenantId) {
+      throw new Error("Estimate not found or access denied")
+    }
+
+    const embeddingId = await ctx.db.insert("estimateEmbeddings", {
+      tenantId: user.tenantId,
+      estimateId: args.estimateId,
+      inspectionId: args.inspectionId,
+      embedding: args.embedding,
+      contentType: args.contentType,
+      metadata: args.metadata,
+      createdAt: Date.now(),
+    })
+
+    // Update estimate with embedding reference
+    await ctx.db.patch(args.estimateId, {
       embeddingId,
       updatedAt: Date.now(),
     })

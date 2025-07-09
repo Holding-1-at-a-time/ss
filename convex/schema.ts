@@ -82,13 +82,22 @@ export default defineSchema({
     aiConfidence: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    zoneCategory: v.optional(v.union(v.literal("exterior"), v.literal("interior"), v.literal("mechanical"))),
+    repairComplexity: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+    estimatedRepairTime: v.optional(v.number()), // in hours
+    annotatedBy: v.optional(v.string()), // user ID who created the annotation
+    reviewedBy: v.optional(v.string()), // user ID who reviewed the annotation
+    reviewStatus: v.optional(v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"))),
     embeddingId: v.optional(v.id("damageEmbeddings")),
   })
     .index("by_tenant", ["tenantId"])
     .index("by_tenant_inspection", ["tenantId", "inspectionId"])
     .index("by_tenant_severity", ["tenantId", "severity"])
     .index("by_tenant_type", ["tenantId", "type"])
-    .index("by_embedding", ["embeddingId"]),
+    .index("by_embedding", ["embeddingId"])
+    .index("by_tenant_zone", ["tenantId", "location"])
+    .index("by_tenant_review_status", ["tenantId", "reviewStatus"])
+    .index("by_tenant_annotated_by", ["tenantId", "annotatedBy"]),
 
   estimates: defineTable({
     tenantId: v.string(),

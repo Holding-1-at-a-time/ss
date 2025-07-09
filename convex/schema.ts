@@ -30,6 +30,23 @@ export default defineSchema({
     overallCondition: v.optional(
       v.union(v.literal("excellent"), v.literal("good"), v.literal("fair"), v.literal("poor")),
     ),
+    // Filthiness scoring fields
+    filthinessScore: v.optional(v.number()), // 0-100 percentage
+    filthinessZoneScores: v.optional(
+      v.object({
+        exterior: v.number(),
+        interior: v.number(),
+        engine: v.number(),
+        undercarriage: v.number(),
+      }),
+    ),
+    filthinessSeverity: v.optional(
+      v.union(v.literal("light"), v.literal("moderate"), v.literal("heavy"), v.literal("extreme")),
+    ),
+    estimatedCleaningTime: v.optional(v.number()), // in hours
+    filthinessAssessedAt: v.optional(v.number()),
+    filthinessAssessedBy: v.optional(v.string()),
+    filthinessNotes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
     createdBy: v.optional(v.string()),
@@ -40,6 +57,8 @@ export default defineSchema({
     .index("by_tenant_scheduled", ["tenantId", "scheduledAt"])
     .index("by_tenant_vin", ["tenantId", "vehicleVin"])
     .index("by_tenant_vehicle", ["tenantId", "vehicleMake", "vehicleModel"])
+    .index("by_tenant_filthiness", ["tenantId", "filthinessSeverity"])
+    .index("by_tenant_cleaning_time", ["tenantId", "estimatedCleaningTime"])
     .searchIndex("search_by_tenant", {
       searchField: "vehicleVin",
       filterFields: ["tenantId", "status"],

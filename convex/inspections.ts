@@ -2,7 +2,8 @@ import { v } from "convex/values"
 import { mutation, query, action } from "./_generated/server"
 import { getCurrentUser } from "./auth"
 import { isValidVIN, decodeVINFromAPI } from "./vin_utils"
-import { api } from "./api"
+import { calculateFilthinessMetrics } from "./filthinessUtils"
+import { api } from "./_generated/api"
 
 // Queries
 export const getInspections = query({
@@ -193,6 +194,148 @@ export const deleteInspection = mutation({
 
     await ctx.db.delete(args.id)
     return args.id
+  },
+})
+
+// Filthiness scoring and pricing trigger update
+export const updateFilthinessScore = mutation({
+  args: {
+    inspectionId: v.id("inspections"),
+    filthinessPercent: v.number(),
+    zoneScores: v.optional(
+      v.object({
+        exterior: v.optional(v.number()),
+        interior: v.optional(v.number()),
+        engine: v.optional(v.number()),
+        undercarriage: v.optional(v.number()),
+      }),
+    ),
+    notes: v.optional(v.string()),
+    assessedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    // Step 1: Verify inspection exists and belongs to tenant
+    const inspection = await ctx.db.get(args.inspectionId)
+    if (!inspection || inspection.tenantId !== user.tenantId) {
+      throw new Error("Inspection not found or access denied")
+    }
+
+    // Step 2: Validate filthiness percentage
+    if (args.filthinessPercent < 0 || args.filthinessPercent > 100) {
+      throw new Error("Filthiness percentage must be between 0 and 100")
+    }
+
+    // Step 3: Calculate comprehensive filthiness metrics
+    const filthinessMetrics = calculateFilthinessMetrics(args.filthinessPercent, args.zoneScores)
+
+    const now = Date.now()
+
+    // Step 4: Update inspection record with filthiness data (atomic update)
+    await ctx.db.patch(args.inspectionId, {
+      filthinessScore: args.filthinessPercent,
+      filthinessZoneScores: filthinessMetrics.zoneBreakdown,
+      filthinessSeverity: filthinessMetrics.severityLevel,
+      estimatedCleaningTime: filthinessMetrics.estimatedCleaningTime,
+      filthinessAssessedAt: now,
+      filthinessAssessedBy: args.assessedBy || user.userId,
+      filthinessNotes: args.notes,
+      updatedAt: now,
+    })
+
+    // Step 5: Trigger pricing refresh for all related estimates
+    const pricingRefreshResult = await ctx.runMutation(api.pricingEngine.refreshInspectionPricing, {
+      inspectionId: args.inspectionId,
+      reason: `Filthiness score updated to ${args.filthinessPercent}% (${filthinessMetrics.severityLevel})`,
+    })
+
+    // Step 6: Get updated inspection data
+    const updatedInspection = await ctx.db.get(args.inspectionId)
+
+    return {
+      inspectionId: args.inspectionId,
+      inspection: updatedInspection,
+      filthinessMetrics,
+      pricingUpdate: pricingRefreshResult,
+      updatedAt: now,
+      summary: {
+        previousScore: inspection.filthinessScore,
+        newScore: args.filthinessPercent,
+        severityLevel: filthinessMetrics.severityLevel,
+        laborMultiplier: filthinessMetrics.laborMultiplier,
+        estimatedCleaningTime: filthinessMetrics.estimatedCleaningTime,
+        estimatesUpdated: pricingRefreshResult.updatedEstimates.length,
+      },
+    }
+  },
+})
+
+// Batch update filthiness scores for multiple inspections
+export const batchUpdateFilthinessScores = mutation({
+  args: {
+    updates: v.array(
+      v.object({
+        inspectionId: v.id("inspections"),
+        filthinessPercent: v.number(),
+        zoneScores: v.optional(
+          v.object({
+            exterior: v.optional(v.number()),
+            interior: v.optional(v.number()),
+            engine: v.optional(v.number()),
+            undercarriage: v.optional(v.number()),
+          }),
+        ),
+        notes: v.optional(v.string()),
+      }),
+    ),
+    assessedBy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    const results = []
+    const errors = []
+
+    // Process each update sequentially to maintain data consistency
+    for (const update of args.updates) {
+      try {
+        const result = await ctx.runMutation(api.inspections.updateFilthinessScore, {
+          inspectionId: update.inspectionId,
+          filthinessPercent: update.filthinessPercent,
+          zoneScores: update.zoneScores,
+          notes: update.notes,
+          assessedBy: args.assessedBy,
+        })
+
+        results.push({
+          inspectionId: update.inspectionId,
+          success: true,
+          result,
+        })
+      } catch (error) {
+        errors.push({
+          inspectionId: update.inspectionId,
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        })
+      }
+    }
+
+    return {
+      processed: args.updates.length,
+      successful: results.length,
+      failed: errors.length,
+      results,
+      errors,
+      batchCompletedAt: Date.now(),
+    }
   },
 })
 

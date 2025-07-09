@@ -1,0 +1,305 @@
+import { defineSchema, defineTable } from "convex/server"
+import { v } from "convex/values"
+
+export default defineSchema({
+  inspections: defineTable({
+    tenantId: v.string(),
+    vehicleVin: v.string(),
+    vehicleMake: v.string(),
+    vehicleModel: v.string(),
+    vehicleYear: v.number(),
+    customerName: v.string(),
+    customerEmail: v.string(),
+    customerPhone: v.string(),
+    status: v.union(v.literal("pending"), v.literal("in_progress"), v.literal("completed"), v.literal("cancelled")),
+    inspectionType: v.union(
+      v.literal("intake"),
+      v.literal("pre_detail"),
+      v.literal("post_detail"),
+      v.literal("quality_check"),
+    ),
+    scheduledAt: v.number(),
+    completedAt: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    photos: v.array(v.string()), // File storage IDs
+    overallCondition: v.optional(
+      v.union(v.literal("excellent"), v.literal("good"), v.literal("fair"), v.literal("poor")),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    embeddingId: v.optional(v.id("inspectionEmbeddings")),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_status", ["tenantId", "status"])
+    .index("by_tenant_scheduled", ["tenantId", "scheduledAt"])
+    .searchIndex("search_by_tenant", {
+      searchField: "vehicleVin",
+      filterFields: ["tenantId", "status"],
+    })
+    .index("by_embedding", ["embeddingId"]),
+
+  damages: defineTable({
+    tenantId: v.string(),
+    inspectionId: v.id("inspections"),
+    type: v.union(
+      v.literal("scratch"),
+      v.literal("dent"),
+      v.literal("chip"),
+      v.literal("crack"),
+      v.literal("stain"),
+      v.literal("burn"),
+      v.literal("tear"),
+      v.literal("other"),
+    ),
+    severity: v.union(v.literal("minor"), v.literal("moderate"), v.literal("major"), v.literal("severe")),
+    location: v.string(), // e.g., "front_bumper", "driver_door", etc.
+    description: v.string(),
+    dimensions: v.optional(
+      v.object({
+        length: v.number(),
+        width: v.number(),
+        depth: v.optional(v.number()),
+      }),
+    ),
+    repairEstimate: v.optional(v.number()),
+    photos: v.array(v.string()), // File storage IDs
+    boundingBox: v.optional(
+      v.object({
+        x: v.number(),
+        y: v.number(),
+        width: v.number(),
+        height: v.number(),
+      }),
+    ),
+    aiConfidence: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    embeddingId: v.optional(v.id("damageEmbeddings")),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_inspection", ["tenantId", "inspectionId"])
+    .index("by_tenant_severity", ["tenantId", "severity"])
+    .index("by_tenant_type", ["tenantId", "type"])
+    .index("by_embedding", ["embeddingId"]),
+
+  estimates: defineTable({
+    tenantId: v.string(),
+    inspectionId: v.id("inspections"),
+    estimateNumber: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("expired"),
+    ),
+    serviceType: v.union(
+      v.literal("basic_wash"),
+      v.literal("detail"),
+      v.literal("premium_detail"),
+      v.literal("repair"),
+      v.literal("custom"),
+    ),
+    laborHours: v.number(),
+    laborRate: v.number(),
+    materialsCost: v.number(),
+    subtotal: v.number(),
+    taxRate: v.number(),
+    taxAmount: v.number(),
+    total: v.number(),
+    validUntil: v.number(),
+    lineItems: v.array(
+      v.object({
+        description: v.string(),
+        quantity: v.number(),
+        unitPrice: v.number(),
+        total: v.number(),
+      }),
+    ),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    embeddingId: v.optional(v.id("estimateEmbeddings")),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_status", ["tenantId", "status"])
+    .index("by_tenant_inspection", ["tenantId", "inspectionId"])
+    .searchIndex("search_by_tenant", {
+      searchField: "estimateNumber",
+      filterFields: ["tenantId", "status"],
+    })
+    .index("by_embedding", ["embeddingId"]),
+
+  bookings: defineTable({
+    tenantId: v.string(),
+    inspectionId: v.optional(v.id("inspections")),
+    estimateId: v.optional(v.id("estimates")),
+    bookingNumber: v.string(),
+    customerName: v.string(),
+    customerEmail: v.string(),
+    customerPhone: v.string(),
+    vehicleInfo: v.object({
+      vin: v.string(),
+      make: v.string(),
+      model: v.string(),
+      year: v.number(),
+      color: v.string(),
+    }),
+    serviceType: v.union(
+      v.literal("basic_wash"),
+      v.literal("detail"),
+      v.literal("premium_detail"),
+      v.literal("repair"),
+      v.literal("custom"),
+    ),
+    status: v.union(
+      v.literal("scheduled"),
+      v.literal("confirmed"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+      v.literal("no_show"),
+    ),
+    scheduledStart: v.number(),
+    scheduledEnd: v.number(),
+    actualStart: v.optional(v.number()),
+    actualEnd: v.optional(v.number()),
+    assignedTechnician: v.optional(v.string()),
+    location: v.string(),
+    specialInstructions: v.optional(v.string()),
+    totalAmount: v.number(),
+    paidAmount: v.number(),
+    paymentStatus: v.union(v.literal("pending"), v.literal("partial"), v.literal("paid"), v.literal("refunded")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_status", ["tenantId", "status"])
+    .index("by_tenant_scheduled", ["tenantId", "scheduledStart"])
+    .index("by_tenant_technician", ["tenantId", "assignedTechnician"])
+    .searchIndex("search_by_tenant", {
+      searchField: "bookingNumber",
+      filterFields: ["tenantId", "status"],
+    }),
+
+  inspectionEmbeddings: defineTable({
+    tenantId: v.string(),
+    inspectionId: v.id("inspections"),
+    embedding: v.array(v.float64()),
+    contentType: v.union(
+      v.literal("vehicle_description"),
+      v.literal("damage_summary"),
+      v.literal("customer_notes"),
+      v.literal("full_inspection"),
+    ),
+    metadata: v.object({
+      vehicleMake: v.string(),
+      vehicleModel: v.string(),
+      vehicleYear: v.number(),
+      inspectionType: v.string(),
+      overallCondition: v.optional(v.string()),
+    }),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_inspection", ["tenantId", "inspectionId"])
+    .index("by_tenant_content_type", ["tenantId", "contentType"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["tenantId", "contentType", "metadata.vehicleMake", "metadata.inspectionType"],
+    }),
+
+  damageEmbeddings: defineTable({
+    tenantId: v.string(),
+    damageId: v.id("damages"),
+    inspectionId: v.id("inspections"),
+    embedding: v.array(v.float64()),
+    contentType: v.union(v.literal("damage_description"), v.literal("visual_features"), v.literal("repair_context")),
+    metadata: v.object({
+      damageType: v.string(),
+      severity: v.string(),
+      location: v.string(),
+      vehicleMake: v.string(),
+      vehicleModel: v.string(),
+      repairEstimate: v.optional(v.number()),
+    }),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_damage", ["tenantId", "damageId"])
+    .index("by_tenant_inspection", ["tenantId", "inspectionId"])
+    .index("by_tenant_content_type", ["tenantId", "contentType"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: [
+        "tenantId",
+        "contentType",
+        "metadata.damageType",
+        "metadata.severity",
+        "metadata.location",
+        "metadata.vehicleMake",
+      ],
+    }),
+
+  estimateEmbeddings: defineTable({
+    tenantId: v.string(),
+    estimateId: v.id("estimates"),
+    inspectionId: v.id("inspections"),
+    embedding: v.array(v.float64()),
+    contentType: v.union(v.literal("service_description"), v.literal("pricing_context"), v.literal("line_items")),
+    metadata: v.object({
+      serviceType: v.string(),
+      totalAmount: v.number(),
+      laborHours: v.number(),
+      vehicleMake: v.string(),
+      vehicleModel: v.string(),
+      damageCount: v.number(),
+    }),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_estimate", ["tenantId", "estimateId"])
+    .index("by_tenant_inspection", ["tenantId", "inspectionId"])
+    .index("by_tenant_content_type", ["tenantId", "contentType"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["tenantId", "contentType", "metadata.serviceType", "metadata.vehicleMake"],
+    }),
+
+  knowledgeBaseEmbeddings: defineTable({
+    tenantId: v.string(),
+    documentId: v.string(), // Reference to external document or internal ID
+    embedding: v.array(v.float64()),
+    contentType: v.union(
+      v.literal("repair_procedure"),
+      v.literal("damage_guide"),
+      v.literal("pricing_rule"),
+      v.literal("customer_faq"),
+      v.literal("training_material"),
+    ),
+    title: v.string(),
+    content: v.string(), // The actual text content that was embedded
+    metadata: v.object({
+      category: v.string(),
+      tags: v.array(v.string()),
+      difficulty: v.optional(v.union(v.literal("beginner"), v.literal("intermediate"), v.literal("advanced"))),
+      vehicleTypes: v.optional(v.array(v.string())), // ["sedan", "suv", "truck"]
+      damageTypes: v.optional(v.array(v.string())), // ["scratch", "dent", "stain"]
+    }),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_active", ["tenantId", "isActive"])
+    .index("by_tenant_content_type", ["tenantId", "contentType"])
+    .index("by_tenant_category", ["tenantId", "metadata.category"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["tenantId", "contentType", "metadata.category", "isActive"],
+    }),
+})

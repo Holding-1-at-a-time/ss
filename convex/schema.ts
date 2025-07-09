@@ -2,6 +2,62 @@ import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 export default defineSchema({
+  // User management
+  users: defineTable({
+    userId: v.string(), // Clerk user ID
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    isActive: v.boolean(),
+    lastLoginAt: v.optional(v.number()),
+    deactivatedAt: v.optional(v.number()),
+    deactivationReason: v.optional(v.string()),
+    clerkData: v.any(), // Store full Clerk user data
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_email", ["email"])
+    .index("by_active", ["isActive"]),
+
+  // Tenant memberships (RBAC)
+  tenantMemberships: defineTable({
+    userId: v.string(),
+    tenantId: v.string(),
+    organizationId: v.optional(v.string()), // Clerk organization ID
+    role: v.string(), // SUPER_ADMIN, TENANT_ADMIN, MANAGER, TECHNICIAN, VIEWER, GUEST
+    permissions: v.array(v.string()), // Computed permissions based on role
+    isActive: v.boolean(),
+    joinedAt: v.number(),
+    leftAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_tenant_id", ["tenantId"])
+    .index("by_user_tenant", ["userId", "tenantId"])
+    .index("by_user_organization", ["userId", "organizationId"])
+    .index("by_tenant_role", ["tenantId", "role"])
+    .index("by_tenant_active", ["tenantId", "isActive"]),
+
+  // User sessions
+  userSessions: defineTable({
+    userId: v.string(),
+    sessionId: v.string(), // Clerk session ID
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    lastActiveAt: v.number(),
+    endedAt: v.optional(v.number()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_session_id", ["sessionId"])
+    .index("by_active", ["isActive"])
+    .index("by_last_active", ["lastActiveAt"]),
+
   inspections: defineTable({
     tenantId: v.string(),
     vehicleVin: v.string(),

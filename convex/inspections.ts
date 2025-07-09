@@ -376,14 +376,15 @@ export const createInspectionFromVIN = mutation({
       throw new Error("Invalid VIN format")
     }
 
-    // Check for duplicate VIN within tenant
+    // Check for duplicate active inspection with the same VIN within tenant
     const existingInspection = await ctx.db
       .query("inspections")
       .withIndex("by_tenant_vin", (q) => q.eq("tenantId", user.tenantId).eq("vehicleVin", args.vin.toUpperCase()))
+      .filter((q) => q.neq(q.field("status"), "completed").and(q.neq(q.field("status"), "cancelled")))
       .first()
 
     if (existingInspection) {
-      throw new Error("Inspection already exists for this VIN")
+      throw new Error("An active inspection already exists for this VIN")
     }
 
     const now = Date.now()

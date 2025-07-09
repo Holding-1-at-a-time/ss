@@ -338,4 +338,19 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["tenantId", "contentType", "metadata.category", "isActive"],
     }),
+
+  notificationLogs: defineTable({
+    tenantId: v.string(),
+    bookingId: v.id("bookings"),
+    type: v.string(), // "reminder_24h", "reminder_2h", "reminder_30m", etc.
+    recipient: v.string(), // email or phone
+    message: v.string(),
+    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("pending")),
+    error: v.optional(v.string()),
+    sentAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_booking", ["tenantId", "bookingId"])
+    .index("by_tenant_status", ["tenantId", "status"])
+    .index("by_tenant_type", ["tenantId", "type"]),
 })

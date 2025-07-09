@@ -1,6 +1,8 @@
 import { v } from "convex/values"
-import { mutation, query } from "./_generated/server"
+import { mutation, query, action } from "./_generated/server"
 import { getCurrentUser } from "./auth"
+import { isValidVIN, decodeVINFromAPI } from "./vin_utils"
+import { api } from "./api"
 
 // Queries
 export const getInspections = query({
@@ -191,5 +193,207 @@ export const deleteInspection = mutation({
 
     await ctx.db.delete(args.id)
     return args.id
+  },
+})
+
+// VIN-based inspection creation workflow
+export const createInspectionFromVIN = mutation({
+  args: {
+    vin: v.string(),
+    customerName: v.string(),
+    customerEmail: v.string(),
+    customerPhone: v.string(),
+    inspectionType: v.union(
+      v.literal("intake"),
+      v.literal("pre_detail"),
+      v.literal("post_detail"),
+      v.literal("quality_check"),
+    ),
+    scheduledAt: v.number(),
+    notes: v.optional(v.string()),
+    vehicleMetadata: v.object({
+      make: v.string(),
+      model: v.string(),
+      year: v.number(),
+      bodyClass: v.optional(v.string()),
+      engineSize: v.optional(v.string()),
+      fuelType: v.optional(v.string()),
+      driveType: v.optional(v.string()),
+      trim: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    // Validate VIN format (17 characters, alphanumeric except I, O, Q)
+    if (!isValidVIN(args.vin)) {
+      throw new Error("Invalid VIN format")
+    }
+
+    // Check for duplicate VIN within tenant
+    const existingInspection = await ctx.db
+      .query("inspections")
+      .withIndex("by_tenant_vin", (q) => q.eq("tenantId", user.tenantId).eq("vehicleVin", args.vin.toUpperCase()))
+      .first()
+
+    if (existingInspection) {
+      throw new Error("Inspection already exists for this VIN")
+    }
+
+    const now = Date.now()
+
+    // Create inspection with enriched vehicle metadata
+    const inspectionId = await ctx.db.insert("inspections", {
+      tenantId: user.tenantId,
+      vehicleVin: args.vin.toUpperCase(),
+      vehicleMake: args.vehicleMetadata.make,
+      vehicleModel: args.vehicleMetadata.model,
+      vehicleYear: args.vehicleMetadata.year,
+      vehicleBodyClass: args.vehicleMetadata.bodyClass,
+      vehicleEngineSize: args.vehicleMetadata.engineSize,
+      vehicleFuelType: args.vehicleMetadata.fuelType,
+      vehicleDriveType: args.vehicleMetadata.driveType,
+      vehicleTrim: args.vehicleMetadata.trim,
+      customerName: args.customerName,
+      customerEmail: args.customerEmail,
+      customerPhone: args.customerPhone,
+      status: "pending",
+      inspectionType: args.inspectionType,
+      scheduledAt: args.scheduledAt,
+      notes: args.notes,
+      photos: [],
+      createdAt: now,
+      updatedAt: now,
+      createdBy: user.userId,
+    })
+
+    return {
+      inspectionId,
+      vehicleInfo: {
+        vin: args.vin.toUpperCase(),
+        make: args.vehicleMetadata.make,
+        model: args.vehicleMetadata.model,
+        year: args.vehicleMetadata.year,
+        bodyClass: args.vehicleMetadata.bodyClass,
+        engineSize: args.vehicleMetadata.engineSize,
+        fuelType: args.vehicleMetadata.fuelType,
+        driveType: args.vehicleMetadata.driveType,
+        trim: args.vehicleMetadata.trim,
+      },
+    }
+  },
+})
+
+// Action to decode VIN and create inspection atomically
+export const decodeVINAndCreateInspection = action({
+  args: {
+    vin: v.string(),
+    customerName: v.string(),
+    customerEmail: v.string(),
+    customerPhone: v.string(),
+    inspectionType: v.union(
+      v.literal("intake"),
+      v.literal("pre_detail"),
+      v.literal("post_detail"),
+      v.literal("quality_check"),
+    ),
+    scheduledAt: v.number(),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    try {
+      // Step 1: Decode VIN using vPIC API
+      const vehicleMetadata = await decodeVINFromAPI(args.vin)
+
+      if (!vehicleMetadata) {
+        throw new Error("Unable to decode VIN - invalid or not found")
+      }
+
+      // Step 2: Create inspection with decoded metadata atomically
+      const result = await ctx.runMutation(api.inspections.createInspectionFromVIN, {
+        vin: args.vin,
+        customerName: args.customerName,
+        customerEmail: args.customerEmail,
+        customerPhone: args.customerPhone,
+        inspectionType: args.inspectionType,
+        scheduledAt: args.scheduledAt,
+        notes: args.notes,
+        vehicleMetadata,
+      })
+
+      return {
+        success: true,
+        ...result,
+        decodedAt: Date.now(),
+      }
+    } catch (error) {
+      console.error("VIN decode and inspection creation failed:", error)
+      throw new Error(error instanceof Error ? error.message : "Failed to create inspection from VIN")
+    }
+  },
+})
+
+// Batch VIN processing for multiple vehicles
+export const batchCreateInspectionsFromVINs = action({
+  args: {
+    inspections: v.array(
+      v.object({
+        vin: v.string(),
+        customerName: v.string(),
+        customerEmail: v.string(),
+        customerPhone: v.string(),
+        inspectionType: v.union(
+          v.literal("intake"),
+          v.literal("pre_detail"),
+          v.literal("post_detail"),
+          v.literal("quality_check"),
+        ),
+        scheduledAt: v.number(),
+        notes: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx)
+    if (!user?.tenantId) {
+      throw new Error("Unauthorized: No tenant context")
+    }
+
+    const results = []
+    const errors = []
+
+    // Process each VIN sequentially to avoid API rate limits
+    for (const inspectionData of args.inspections) {
+      try {
+        const result = await ctx.runAction(api.inspections.decodeVINAndCreateInspection, inspectionData)
+        results.push({
+          vin: inspectionData.vin,
+          success: true,
+          inspectionId: result.inspectionId,
+        })
+      } catch (error) {
+        errors.push({
+          vin: inspectionData.vin,
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        })
+      }
+    }
+
+    return {
+      processed: args.inspections.length,
+      successful: results.length,
+      failed: errors.length,
+      results,
+      errors,
+    }
   },
 })

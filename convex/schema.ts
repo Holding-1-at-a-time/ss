@@ -8,6 +8,11 @@ export default defineSchema({
     vehicleMake: v.string(),
     vehicleModel: v.string(),
     vehicleYear: v.number(),
+    vehicleBodyClass: v.optional(v.string()),
+    vehicleEngineSize: v.optional(v.string()),
+    vehicleFuelType: v.optional(v.string()),
+    vehicleDriveType: v.optional(v.string()),
+    vehicleTrim: v.optional(v.string()),
     customerName: v.string(),
     customerEmail: v.string(),
     customerPhone: v.string(),
@@ -27,11 +32,14 @@ export default defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
+    createdBy: v.optional(v.string()),
     embeddingId: v.optional(v.id("inspectionEmbeddings")),
   })
     .index("by_tenant", ["tenantId"])
     .index("by_tenant_status", ["tenantId", "status"])
     .index("by_tenant_scheduled", ["tenantId", "scheduledAt"])
+    .index("by_tenant_vin", ["tenantId", "vehicleVin"])
+    .index("by_tenant_vehicle", ["tenantId", "vehicleMake", "vehicleModel"])
     .searchIndex("search_by_tenant", {
       searchField: "vehicleVin",
       filterFields: ["tenantId", "status"],

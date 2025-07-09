@@ -401,6 +401,28 @@ export const addBatchDamageAnnotations = mutation({
       if (!validZones.includes(damageData.zoneId as DamageZone)) {
         throw new Error(`Invalid damage zone: ${damageData.zoneId}`)
       }
+  
+      // Validate bounding box coordinates
+      if (
+        isNaN(damageData.boundingBox.x) ||
+        isNaN(damageData.boundingBox.y) ||
+        isNaN(damageData.boundingBox.width) ||
+        isNaN(damageData.boundingBox.height) ||
+        damageData.boundingBox.x < 0 ||
+        damageData.boundingBox.x > 1 ||
+        damageData.boundingBox.y < 0 ||
+        damageData.boundingBox.y > 1 ||
+        damageData.boundingBox.width <= 0 ||
+        damageData.boundingBox.width > 1 ||
+        damageData.boundingBox.height <= 0 ||
+        damageData.boundingBox.height > 1 ||
+        damageData.boundingBox.x + damageData.boundingBox.width > 1 ||
+        damageData.boundingBox.y + damageData.boundingBox.height > 1
+      ) {
+        throw new Error(
+          `Invalid bounding box coordinates for damage in zone ${damageData.zoneId}. All values must be between 0 and 1, and box must fit within image bounds.`
+        )
+      }
 
       // Calculate repair estimate
       const severityConfig = SEVERITY_LEVELS[damageData.severity.toUpperCase() as keyof typeof SEVERITY_LEVELS]

@@ -371,4 +371,113 @@ export default defineSchema({
       searchField: "queryText",
       filterFields: ["tenantId"],
     }),
+
+  tenantSettings: defineTable({
+    tenantId: v.string(),
+    settings: v.any(), // TenantSettingsSchema
+    version: v.number(),
+    lastUpdatedBy: v.string(),
+    lastUpdatedAt: v.number(),
+    createdAt: v.number(),
+    updateReason: v.optional(v.string()),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_version", ["tenantId", "version"]),
+
+  tenantSettingsHistory: defineTable({
+    tenantId: v.string(),
+    version: v.number(),
+    settings: v.any(),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+    archivedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_version", ["tenantId", "version"]),
+
+  adminUsers: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    email: v.string(),
+    firstName: v.string(),
+    lastName: v.string(),
+    role: v.union(
+      v.literal("super_admin"),
+      v.literal("tenant_admin"),
+      v.literal("manager"),
+      v.literal("technician"),
+      v.literal("viewer"),
+    ),
+    isActive: v.boolean(),
+    lastLoginAt: v.optional(v.number()),
+    createdBy: v.string(),
+    lastUpdatedBy: v.string(),
+    deactivatedBy: v.optional(v.string()),
+    deactivatedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_email", ["tenantId", "email"])
+    .index("by_tenant_role", ["tenantId", "role"])
+    .index("by_tenant_active", ["tenantId", "isActive"]),
+
+  pricingRules: defineTable({
+    tenantId: v.string(),
+    name: v.string(),
+    description: v.string(),
+    serviceTypes: v.array(v.string()),
+    conditions: v.any(), // Flexible rule conditions
+    adjustments: v.object({
+      type: v.union(v.literal("percentage"), v.literal("fixed")),
+      value: v.number(),
+    }),
+    enabled: v.boolean(),
+    priority: v.number(),
+    createdBy: v.string(),
+    lastUpdatedBy: v.string(),
+    createdAt: v.number(),
+    lastUpdatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_enabled", ["tenantId", "enabled"])
+    .index("by_tenant_priority", ["tenantId", "priority"]),
+
+  auditLogs: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    action: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    changes: v.optional(v.any()),
+    metadata: v.optional(v.any()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    timestamp: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_action", ["tenantId", "action"])
+    .index("by_tenant_entity", ["tenantId", "entityType", "entityId"])
+    .index("by_tenant_timestamp", ["tenantId", "timestamp"])
+    .index("by_timestamp", ["timestamp"]),
+
+  securityAlerts: defineTable({
+    tenantId: v.string(),
+    auditLogId: v.id("auditLogs"),
+    alertType: v.string(),
+    severity: v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("CRITICAL")),
+    description: v.string(),
+    resolved: v.boolean(),
+    resolvedBy: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_severity", ["tenantId", "severity"])
+    .index("by_tenant_resolved", ["tenantId", "resolved"])
+    .index("by_audit_log", ["auditLogId"]),
 })

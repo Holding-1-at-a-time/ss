@@ -126,8 +126,8 @@ export const bookAppointment = mutation({
 
       // Step 9: Update inspection status
       await ctx.db.patch(args.inspectionId, {
-        status: "completed", // Inspection is complete, now booked
-        completedAt: Date.now(),
+        status: "booked", // Inspection is now booked for service
+        bookedAt: Date.now(),
         updatedAt: Date.now(),
       })
 

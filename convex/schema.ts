@@ -2,12 +2,73 @@ import { defineSchema, defineTable } from "convex/server"
 import { v } from "convex/values"
 
 export default defineSchema({
+  // User management
+  users: defineTable({
+    userId: v.string(), // Clerk user ID
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
+    isActive: v.boolean(),
+    lastLoginAt: v.optional(v.number()),
+    deactivatedAt: v.optional(v.number()),
+    deactivationReason: v.optional(v.string()),
+    clerkData: v.any(), // Store full Clerk user data
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_email", ["email"])
+    .index("by_active", ["isActive"]),
+
+  // Tenant memberships (RBAC)
+  tenantMemberships: defineTable({
+    userId: v.string(),
+    tenantId: v.string(),
+    organizationId: v.optional(v.string()), // Clerk organization ID
+    role: v.string(), // SUPER_ADMIN, TENANT_ADMIN, MANAGER, TECHNICIAN, VIEWER, GUEST
+    permissions: v.array(v.string()), // Computed permissions based on role
+    isActive: v.boolean(),
+    joinedAt: v.number(),
+    leftAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_tenant_id", ["tenantId"])
+    .index("by_user_tenant", ["userId", "tenantId"])
+    .index("by_user_organization", ["userId", "organizationId"])
+    .index("by_tenant_role", ["tenantId", "role"])
+    .index("by_tenant_active", ["tenantId", "isActive"]),
+
+  // User sessions
+  userSessions: defineTable({
+    userId: v.string(),
+    sessionId: v.string(), // Clerk session ID
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    lastActiveAt: v.number(),
+    endedAt: v.optional(v.number()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_session_id", ["sessionId"])
+    .index("by_active", ["isActive"])
+    .index("by_last_active", ["lastActiveAt"]),
+
   inspections: defineTable({
     tenantId: v.string(),
     vehicleVin: v.string(),
     vehicleMake: v.string(),
     vehicleModel: v.string(),
     vehicleYear: v.number(),
+    vehicleBodyClass: v.optional(v.string()),
+    vehicleEngineSize: v.optional(v.string()),
+    vehicleFuelType: v.optional(v.string()),
+    vehicleDriveType: v.optional(v.string()),
+    vehicleTrim: v.optional(v.string()),
     customerName: v.string(),
     customerEmail: v.string(),
     customerPhone: v.string(),
@@ -25,13 +86,35 @@ export default defineSchema({
     overallCondition: v.optional(
       v.union(v.literal("excellent"), v.literal("good"), v.literal("fair"), v.literal("poor")),
     ),
+    // Filthiness scoring fields
+    filthinessScore: v.optional(v.number()), // 0-100 percentage
+    filthinessZoneScores: v.optional(
+      v.object({
+        exterior: v.number(),
+        interior: v.number(),
+        engine: v.number(),
+        undercarriage: v.number(),
+      }),
+    ),
+    filthinessSeverity: v.optional(
+      v.union(v.literal("light"), v.literal("moderate"), v.literal("heavy"), v.literal("extreme")),
+    ),
+    estimatedCleaningTime: v.optional(v.number()), // in hours
+    filthinessAssessedAt: v.optional(v.number()),
+    filthinessAssessedBy: v.optional(v.string()),
+    filthinessNotes: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    createdBy: v.optional(v.string()),
     embeddingId: v.optional(v.id("inspectionEmbeddings")),
   })
     .index("by_tenant", ["tenantId"])
     .index("by_tenant_status", ["tenantId", "status"])
     .index("by_tenant_scheduled", ["tenantId", "scheduledAt"])
+    .index("by_tenant_vin", ["tenantId", "vehicleVin"])
+    .index("by_tenant_vehicle", ["tenantId", "vehicleMake", "vehicleModel"])
+    .index("by_tenant_filthiness", ["tenantId", "filthinessSeverity"])
+    .index("by_tenant_cleaning_time", ["tenantId", "estimatedCleaningTime"])
     .searchIndex("search_by_tenant", {
       searchField: "vehicleVin",
       filterFields: ["tenantId", "status"],
@@ -74,13 +157,22 @@ export default defineSchema({
     aiConfidence: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    zoneCategory: v.optional(v.union(v.literal("exterior"), v.literal("interior"), v.literal("mechanical"))),
+    repairComplexity: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+    estimatedRepairTime: v.optional(v.number()), // in hours
+    annotatedBy: v.optional(v.string()), // user ID who created the annotation
+    reviewedBy: v.optional(v.string()), // user ID who reviewed the annotation
+    reviewStatus: v.optional(v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"))),
     embeddingId: v.optional(v.id("damageEmbeddings")),
   })
     .index("by_tenant", ["tenantId"])
     .index("by_tenant_inspection", ["tenantId", "inspectionId"])
     .index("by_tenant_severity", ["tenantId", "severity"])
     .index("by_tenant_type", ["tenantId", "type"])
-    .index("by_embedding", ["embeddingId"]),
+    .index("by_embedding", ["embeddingId"])
+    .index("by_tenant_zone", ["tenantId", "location"])
+    .index("by_tenant_review_status", ["tenantId", "reviewStatus"])
+    .index("by_tenant_annotated_by", ["tenantId", "annotatedBy"]),
 
   estimates: defineTable({
     tenantId: v.string(),
@@ -302,4 +394,146 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["tenantId", "contentType", "metadata.category", "isActive"],
     }),
+
+  notificationLogs: defineTable({
+    tenantId: v.string(),
+    bookingId: v.id("bookings"),
+    type: v.string(), // "reminder_24h", "reminder_2h", "reminder_30m", etc.
+    recipient: v.string(), // email or phone
+    message: v.string(),
+    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("pending")),
+    error: v.optional(v.string()),
+    sentAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_booking", ["tenantId", "bookingId"])
+    .index("by_tenant_status", ["tenantId", "status"])
+    .index("by_tenant_type", ["tenantId", "type"]),
+
+  searchLogs: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    queryText: v.string(),
+    filters: v.optional(v.any()),
+    resultCount: v.number(),
+    executionTime: v.number(), // milliseconds
+    userAction: v.optional(v.string()), // "clicked", "refined", "abandoned"
+    timestamp: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_timestamp", ["tenantId", "timestamp"])
+    .searchIndex("search_by_tenant", {
+      searchField: "queryText",
+      filterFields: ["tenantId"],
+    }),
+
+  tenantSettings: defineTable({
+    tenantId: v.string(),
+    settings: v.any(), // TenantSettingsSchema
+    version: v.number(),
+    lastUpdatedBy: v.string(),
+    lastUpdatedAt: v.number(),
+    createdAt: v.number(),
+    updateReason: v.optional(v.string()),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_version", ["tenantId", "version"]),
+
+  tenantSettingsHistory: defineTable({
+    tenantId: v.string(),
+    version: v.number(),
+    settings: v.any(),
+    updatedBy: v.string(),
+    updatedAt: v.number(),
+    archivedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_version", ["tenantId", "version"]),
+
+  adminUsers: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    email: v.string(),
+    firstName: v.string(),
+    lastName: v.string(),
+    role: v.union(
+      v.literal("super_admin"),
+      v.literal("tenant_admin"),
+      v.literal("manager"),
+      v.literal("technician"),
+      v.literal("viewer"),
+    ),
+    isActive: v.boolean(),
+    lastLoginAt: v.optional(v.number()),
+    createdBy: v.string(),
+    lastUpdatedBy: v.string(),
+    deactivatedBy: v.optional(v.string()),
+    deactivatedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_email", ["tenantId", "email"])
+    .index("by_tenant_role", ["tenantId", "role"])
+    .index("by_tenant_active", ["tenantId", "isActive"]),
+
+  pricingRules: defineTable({
+    tenantId: v.string(),
+    name: v.string(),
+    description: v.string(),
+    serviceTypes: v.array(v.string()),
+    conditions: v.any(), // Flexible rule conditions
+    adjustments: v.object({
+      type: v.union(v.literal("percentage"), v.literal("fixed")),
+      value: v.number(),
+    }),
+    enabled: v.boolean(),
+    priority: v.number(),
+    createdBy: v.string(),
+    lastUpdatedBy: v.string(),
+    createdAt: v.number(),
+    lastUpdatedAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_enabled", ["tenantId", "enabled"])
+    .index("by_tenant_priority", ["tenantId", "priority"]),
+
+  auditLogs: defineTable({
+    tenantId: v.string(),
+    userId: v.string(),
+    action: v.string(),
+    entityType: v.string(),
+    entityId: v.string(),
+    changes: v.optional(v.any()),
+    metadata: v.optional(v.any()),
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    timestamp: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_user", ["tenantId", "userId"])
+    .index("by_tenant_action", ["tenantId", "action"])
+    .index("by_tenant_entity", ["tenantId", "entityType", "entityId"])
+    .index("by_tenant_timestamp", ["tenantId", "timestamp"])
+    .index("by_timestamp", ["timestamp"]),
+
+  securityAlerts: defineTable({
+    tenantId: v.string(),
+    auditLogId: v.id("auditLogs"),
+    alertType: v.string(),
+    severity: v.union(v.literal("LOW"), v.literal("MEDIUM"), v.literal("HIGH"), v.literal("CRITICAL")),
+    description: v.string(),
+    resolved: v.boolean(),
+    resolvedBy: v.optional(v.string()),
+    resolvedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tenant", ["tenantId"])
+    .index("by_tenant_severity", ["tenantId", "severity"])
+    .index("by_tenant_resolved", ["tenantId", "resolved"])
+    .index("by_audit_log", ["auditLogId"]),
 })

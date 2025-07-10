@@ -157,4 +157,3 @@
 To suggest features, report an issue, or submit pricing adjustments, contact: **support@slicksolutions.ai** or join the **#ai-inspections** channel on our dev Slack.
 
 ---
-

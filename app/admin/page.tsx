@@ -1,6 +1,4 @@
 "use client"
-
-import React from "react"
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
@@ -180,7 +178,7 @@ function ShopSettingsTab() {
   })
 
   // Initialize form with fetched data
-  React.useEffect(() => {
+  useState(() => {
     if (settings) {
       form.reset(settings)
     }

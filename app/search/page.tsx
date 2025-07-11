@@ -1,171 +1,260 @@
 "use client"
-
-import type React from "react"
-
-import { useState, useMemo } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Input } from "@/components/ui/input"
+import { useSearchParams, useRouter } from "next/navigation"
+import { format, parseISO } from "date-fns"
+import { useAuthContext } from "@/lib/auth-context"
+import { useTenant } from "@/lib/tenant-context"
+import { useDebounce } from "@/hooks/use-debounce"
+import { ProtectedLayout } from "@/components/protected-layout"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, Filter, Calendar, Car, FileText, AlertTriangle, X, Loader2, SortAsc, SortDesc } from "lucide-react"
-import { useTenant } from "@/lib/tenant-context"
-import { useAuth } from "@/lib/auth-context"
-import { format } from "date-fns"
-import { useDebounce } from "@/hooks/use-debounce"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Search,
+  Filter,
+  Calendar,
+  MapPin,
+  AlertTriangle,
+  Car,
+  X,
+  SortAsc,
+  SortDesc,
+  FileText,
+  Star,
+  TrendingUp,
+} from "lucide-react"
 
 interface SearchFilters {
-  severity?: Array<"minor" | "moderate" | "major" | "severe">
-  dateStart?: number
-  dateEnd?: number
-  vehicleMake?: string[]
-  inspectionType?: Array<"intake" | "pre_detail" | "post_detail" | "quality_check">
-  overallCondition?: Array<"excellent" | "good" | "fair" | "poor">
-  filthinessLevel?: Array<"light" | "moderate" | "heavy" | "extreme">
-  minDamageCount?: number
-  maxDamageCount?: number
+  query: string
+  severity: string[]
+  dateRange: {
+    start: string
+    end: string
+  }
+  inspectionType: string[]
+  condition: string[]
+  sortBy: "relevance" | "date" | "severity" | "score"
+  sortOrder: "asc" | "desc"
 }
 
 interface SearchResult {
-  inspection: any
-  damages: any[]
-  score: number
-  scoreBreakdown: {
-    vectorSimilarity: number
-    keywordMatch: number
-    timeDecay: number
-    exactMatch: number
-    damageRelevance: number
-    totalScore: number
+  id: string
+  type: "inspection" | "estimate" | "booking" | "damage"
+  title: string
+  description: string
+  snippet: string
+  relevanceScore: number
+  semanticScore: number
+  keywordScore: number
+  metadata: {
+    vehicleInfo?: {
+      make: string
+      model: string
+      year: number
+    }
+    customerName?: string
+    createdAt: string
+    severity?: string
+    condition?: string
+    location?: string
+    tags?: string[]
   }
   matchedTerms: string[]
-  summary: {
-    vehicleInfo: string
-    damageCount: number
-    totalRepairCost: number
-    condition: string
-    lastUpdated: string
-  }
-  relevanceFactors: string[]
+  highlights: string[]
 }
 
-type SortOption = "relevance" | "date" | "damage_count" | "repair_cost"
-type SortDirection = "asc" | "desc"
-
-const SEVERITY_OPTIONS = [
+const severityOptions = [
   { value: "minor", label: "Minor", color: "bg-green-100 text-green-800" },
   { value: "moderate", label: "Moderate", color: "bg-yellow-100 text-yellow-800" },
   { value: "major", label: "Major", color: "bg-orange-100 text-orange-800" },
   { value: "severe", label: "Severe", color: "bg-red-100 text-red-800" },
 ]
 
-const INSPECTION_TYPES = [
-  { value: "intake", label: "Intake" },
-  { value: "pre_detail", label: "Pre-Detail" },
-  { value: "post_detail", label: "Post-Detail" },
-  { value: "quality_check", label: "Quality Check" },
+const inspectionTypeOptions = [
+  { value: "basic", label: "Basic Inspection" },
+  { value: "detailed", label: "Detailed Inspection" },
+  { value: "pre_purchase", label: "Pre-Purchase" },
+  { value: "insurance", label: "Insurance Claim" },
+  { value: "warranty", label: "Warranty Check" },
 ]
 
-const CONDITION_OPTIONS = [
+const conditionOptions = [
   { value: "excellent", label: "Excellent" },
   { value: "good", label: "Good" },
   { value: "fair", label: "Fair" },
   { value: "poor", label: "Poor" },
 ]
 
-const FILTHINESS_LEVELS = [
-  { value: "light", label: "Light" },
-  { value: "moderate", label: "Moderate" },
-  { value: "heavy", label: "Heavy" },
-  { value: "extreme", label: "Extreme" },
-]
-
 function FilterChip({
   label,
   onRemove,
-  color = "bg-blue-100 text-blue-800",
+  color = "bg-primary/10 text-primary",
 }: {
   label: string
   onRemove: () => void
   color?: string
 }) {
   return (
-    <Badge variant="secondary" className={`${color} flex items-center gap-1`}>
+    <Badge variant="secondary" className={`${color} gap-1`}>
       {label}
-      <button
-        onClick={onRemove}
-        className="ml-1 hover:bg-black/10 rounded-full p-0.5"
-        aria-label={`Remove ${label} filter`}
-      >
+      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={onRemove}>
         <X className="h-3 w-3" />
-      </button>
+      </Button>
     </Badge>
   )
 }
 
 function SearchResultCard({ result }: { result: SearchResult }) {
-  const { inspection, damages, score, scoreBreakdown, matchedTerms, summary, relevanceFactors } = result
+  const router = useRouter()
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case "inspection":
+        return <Car className="h-4 w-4" />
+      case "estimate":
+        return <FileText className="h-4 w-4" />
+      case "booking":
+        return <Calendar className="h-4 w-4" />
+      case "damage":
+        return <AlertTriangle className="h-4 w-4" />
+      default:
+        return <FileText className="h-4 w-4" />
+    }
+  }
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "inspection":
+        return "bg-blue-100 text-blue-800"
+      case "estimate":
+        return "bg-green-100 text-green-800"
+      case "booking":
+        return "bg-purple-100 text-purple-800"
+      case "damage":
+        return "bg-red-100 text-red-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const handleViewDetails = () => {
+    const basePath =
+      result.type === "inspection"
+        ? "/inspections"
+        : result.type === "estimate"
+          ? "/estimates"
+          : result.type === "booking"
+            ? "/bookings"
+            : "/damages"
+    router.push(`${basePath}/${result.id}`)
+  }
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
+    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={handleViewDetails}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Car className="h-5 w-5" />
-              {summary.vehicleInfo}
-            </CardTitle>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                {summary.lastUpdated}
-              </span>
-              <span className="flex items-center gap-1">
-                <FileText className="h-4 w-4" />
-                {inspection.inspectionType}
-              </span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className={getTypeColor(result.type)}>
+                {getTypeIcon(result.type)}
+                {result.type.charAt(0).toUpperCase() + result.type.slice(1)}
+              </Badge>
+              {result.metadata.severity && (
+                <Badge
+                  variant="secondary"
+                  className={severityOptions.find((s) => s.value === result.metadata.severity)?.color}
+                >
+                  {result.metadata.severity}
+                </Badge>
+              )}
             </div>
+            <CardTitle className="text-lg">{result.title}</CardTitle>
+            <CardDescription>{result.description}</CardDescription>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-medium">Score: {(score * 100).toFixed(1)}%</div>
-            <Badge
-              variant={
-                summary.condition === "excellent"
-                  ? "default"
-                  : summary.condition === "good"
-                    ? "secondary"
-                    : summary.condition === "fair"
-                      ? "outline"
-                      : "destructive"
-              }
-            >
-              {summary.condition}
-            </Badge>
+          <div className="text-right space-y-1">
+            <div className="flex items-center gap-1">
+              <Star className="h-3 w-3 text-yellow-500" />
+              <span className="text-sm font-medium">{result.relevanceScore.toFixed(2)}</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {format(parseISO(result.metadata.createdAt), "MMM d, yyyy")}
+            </div>
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Damage Summary */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
-            <span className="text-sm">
-              {summary.damageCount} damage{summary.damageCount !== 1 ? "s" : ""}
-            </span>
+        {/* Snippet with highlights */}
+        <div className="text-sm text-muted-foreground">
+          <p dangerouslySetInnerHTML={{ __html: result.snippet }} />
+        </div>
+
+        {/* Metadata */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          {result.metadata.vehicleInfo && (
+            <div className="flex items-center gap-2">
+              <Car className="h-4 w-4 text-muted-foreground" />
+              <span>
+                {result.metadata.vehicleInfo.year} {result.metadata.vehicleInfo.make}{" "}
+                {result.metadata.vehicleInfo.model}
+              </span>
+            </div>
+          )}
+
+          {result.metadata.customerName && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Customer:</span>
+              <span>{result.metadata.customerName}</span>
+            </div>
+          )}
+
+          {result.metadata.location && (
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <span>{result.metadata.location}</span>
+            </div>
+          )}
+
+          {result.metadata.condition && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Condition:</span>
+              <Badge variant="outline">{result.metadata.condition}</Badge>
+            </div>
+          )}
+        </div>
+
+        {/* Score Breakdown */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Relevance Breakdown</span>
+            <Button variant="ghost" size="sm" className="h-auto p-0 text-xs">
+              <TrendingUp className="h-3 w-3 mr-1" />
+              Details
+            </Button>
           </div>
-          <div className="text-sm font-medium">Est. Repair: ${(summary.totalRepairCost / 100).toFixed(2)}</div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex justify-between">
+              <span>Semantic:</span>
+              <span className="font-medium">{result.semanticScore.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Keyword:</span>
+              <span className="font-medium">{result.keywordScore.toFixed(2)}</span>
+            </div>
+          </div>
         </div>
 
         {/* Matched Terms */}
-        {matchedTerms.length > 0 && (
+        {result.matchedTerms.length > 0 && (
           <div className="space-y-2">
-            <div className="text-sm font-medium">Matched Terms:</div>
+            <span className="text-xs text-muted-foreground">Matched Terms:</span>
             <div className="flex flex-wrap gap-1">
-              {matchedTerms.map((term, index) => (
+              {result.matchedTerms.map((term, index) => (
                 <Badge key={index} variant="outline" className="text-xs">
                   {term}
                 </Badge>
@@ -174,517 +263,418 @@ function SearchResultCard({ result }: { result: SearchResult }) {
           </div>
         )}
 
-        {/* Relevance Factors */}
-        {relevanceFactors.length > 0 && (
+        {/* Tags */}
+        {result.metadata.tags && result.metadata.tags.length > 0 && (
           <div className="space-y-2">
-            <div className="text-sm font-medium">Why this result:</div>
-            <ul className="text-xs text-muted-foreground space-y-1">
-              {relevanceFactors.slice(0, 3).map((factor, index) => (
-                <li key={index} className="flex items-center gap-1">
-                  <div className="w-1 h-1 bg-current rounded-full" />
-                  {factor}
-                </li>
+            <span className="text-xs text-muted-foreground">Tags:</span>
+            <div className="flex flex-wrap gap-1">
+              {result.metadata.tags.map((tag, index) => (
+                <Badge key={index} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
               ))}
-            </ul>
+            </div>
           </div>
         )}
-
-        {/* Score Breakdown (expandable) */}
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Score breakdown</summary>
-          <div className="mt-2 space-y-1 pl-4">
-            <div>Semantic similarity: {(scoreBreakdown.vectorSimilarity * 100).toFixed(1)}%</div>
-            <div>Keyword match: {(scoreBreakdown.keywordMatch * 100).toFixed(1)}%</div>
-            <div>Recency: {(scoreBreakdown.timeDecay * 100).toFixed(1)}%</div>
-            <div>Exact match: {(scoreBreakdown.exactMatch * 100).toFixed(1)}%</div>
-            <div>Damage relevance: {(scoreBreakdown.damageRelevance * 100).toFixed(1)}%</div>
-          </div>
-        </details>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href={`/inspections/${inspection._id}`}>View Details</a>
-          </Button>
-          {damages.length > 0 && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/inspections/${inspection._id}/damages`}>View Damages</a>
-            </Button>
-          )}
-        </div>
       </CardContent>
     </Card>
   )
 }
 
+function SearchResultsSkeleton() {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Card key={i}>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between">
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-16" />
+                </div>
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+              </div>
+              <div className="space-y-1">
+                <Skeleton className="h-4 w-12" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+            <div className="grid grid-cols-2 gap-4">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 export default function SearchPage() {
+  const { user } = useAuthContext()
   const { tenant } = useTenant()
-  const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filters, setFilters] = useState<SearchFilters>({})
-  const [sortBy, setSortBy] = useState<SortOption>("relevance")
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
-  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<SearchFilters>({
+    query: searchParams.get("q") || "",
+    severity: [],
+    dateRange: {
+      start: "",
+      end: "",
+    },
+    inspectionType: [],
+    condition: [],
+    sortBy: "relevance",
+    sortOrder: "desc",
+  })
 
-  const debouncedQuery = useDebounce(searchQuery, 300)
+  const debouncedQuery = useDebounce(filters.query, 300)
 
-  // Search results query
+  // Search query
   const {
     data: searchResults,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["search", tenant?.id, debouncedQuery, filters, sortBy, sortDirection],
+    queryKey: ["search", tenant?.id, debouncedQuery, filters],
     queryFn: async () => {
-      if (!tenant?.id || !debouncedQuery.trim()) return null
+      if (!debouncedQuery.trim()) return { results: [], total: 0 }
 
-      // Mock search results - in real app would call Convex action
-      const mockResults: SearchResult[] = [
-        {
-          inspection: {
-            _id: "insp_1",
-            vehicleYear: 2020,
-            vehicleMake: "Honda",
-            vehicleModel: "Civic",
-            vehicleVin: "1HGBH41JXMN109186",
-            customerName: "John Doe",
-            customerEmail: "john@example.com",
-            inspectionType: "intake",
-            overallCondition: "good",
-            filthinessSeverity: "moderate",
-            notes: "Minor scratches on passenger door",
-            createdAt: Date.now() - 86400000, // 1 day ago
-            updatedAt: Date.now() - 86400000,
-          },
-          damages: [
-            {
-              type: "scratch",
-              severity: "minor",
-              location: "passenger_door",
-              description: "Light surface scratch",
-              repairEstimate: 15000, // $150
-            },
-          ],
-          score: 0.85,
-          scoreBreakdown: {
-            vectorSimilarity: 0.7,
-            keywordMatch: 0.8,
-            timeDecay: 0.9,
-            exactMatch: 0.5,
-            damageRelevance: 0.6,
-            totalScore: 0.85,
-          },
-          matchedTerms: ["scratch", "door", "honda"],
-          summary: {
-            vehicleInfo: "2020 Honda Civic",
-            damageCount: 1,
-            totalRepairCost: 15000,
-            condition: "good",
-            lastUpdated: format(Date.now() - 86400000, "MMM d, yyyy"),
-          },
-          relevanceFactors: [
-            "High semantic similarity to query",
-            "Matched keywords: scratch, door, honda",
-            "Recent inspection",
-            "1 damage documented",
-          ],
-        },
-        // Add more mock results...
-      ]
-
-      // Filter results based on current filters
-      let filteredResults = mockResults
-
-      if (filters.severity?.length) {
-        filteredResults = filteredResults.filter((result) =>
-          result.damages.some((damage) => filters.severity!.includes(damage.severity)),
-        )
-      }
-
-      if (filters.inspectionType?.length) {
-        filteredResults = filteredResults.filter((result) =>
-          filters.inspectionType!.includes(result.inspection.inspectionType),
-        )
-      }
-
-      if (filters.overallCondition?.length) {
-        filteredResults = filteredResults.filter((result) =>
-          filters.overallCondition!.includes(result.inspection.overallCondition),
-        )
-      }
-
-      // Sort results
-      filteredResults.sort((a, b) => {
-        let comparison = 0
-
-        switch (sortBy) {
-          case "relevance":
-            comparison = b.score - a.score
-            break
-          case "date":
-            comparison = b.inspection.updatedAt - a.inspection.updatedAt
-            break
-          case "damage_count":
-            comparison = b.damages.length - a.damages.length
-            break
-          case "repair_cost":
-            comparison = b.summary.totalRepairCost - a.summary.totalRepairCost
-            break
-        }
-
-        return sortDirection === "desc" ? comparison : -comparison
+      const params = new URLSearchParams({
+        q: debouncedQuery,
+        tenantId: tenant?.id || "",
+        sortBy: filters.sortBy,
+        sortOrder: filters.sortOrder,
       })
 
-      return {
-        results: filteredResults,
-        totalFound: filteredResults.length,
-        searchMetadata: {
-          queryText: debouncedQuery,
-          filters,
-          executionTime: Date.now(),
-        },
+      if (filters.severity.length > 0) {
+        params.append("severity", filters.severity.join(","))
       }
+      if (filters.inspectionType.length > 0) {
+        params.append("inspectionType", filters.inspectionType.join(","))
+      }
+      if (filters.condition.length > 0) {
+        params.append("condition", filters.condition.join(","))
+      }
+      if (filters.dateRange.start) {
+        params.append("startDate", filters.dateRange.start)
+      }
+      if (filters.dateRange.end) {
+        params.append("endDate", filters.dateRange.end)
+      }
+
+      const response = await fetch(`/api/search?${params.toString()}`)
+      if (!response.ok) throw new Error("Search failed")
+      return response.json()
     },
-    enabled: !!tenant?.id && !!debouncedQuery.trim(),
+    enabled: !!tenant?.id && debouncedQuery.trim().length > 0,
   })
 
-  // Active filter chips
-  const activeFilters = useMemo(() => {
-    const chips: Array<{ label: string; onRemove: () => void; color?: string }> = []
+  // Update URL with search params
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (filters.query) params.set("q", filters.query)
+    if (filters.sortBy !== "relevance") params.set("sort", filters.sortBy)
+    if (filters.sortOrder !== "desc") params.set("order", filters.sortOrder)
 
-    filters.severity?.forEach((severity) => {
-      const option = SEVERITY_OPTIONS.find((opt) => opt.value === severity)
-      if (option) {
-        chips.push({
-          label: `Severity: ${option.label}`,
-          color: option.color,
-          onRemove: () =>
-            setFilters((prev) => ({
-              ...prev,
-              severity: prev.severity?.filter((s) => s !== severity),
-            })),
-        })
-      }
-    })
+    const newUrl = `/search${params.toString() ? `?${params.toString()}` : ""}`
+    router.replace(newUrl, { scroll: false })
+  }, [filters.query, filters.sortBy, filters.sortOrder, router])
 
-    filters.inspectionType?.forEach((type) => {
-      const option = INSPECTION_TYPES.find((opt) => opt.value === type)
-      if (option) {
-        chips.push({
-          label: `Type: ${option.label}`,
-          onRemove: () =>
-            setFilters((prev) => ({
-              ...prev,
-              inspectionType: prev.inspectionType?.filter((t) => t !== type),
-            })),
-        })
-      }
-    })
+  const updateFilter = <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => {
+    setFilters((prev) => ({ ...prev, [key]: value }))
+  }
 
-    filters.overallCondition?.forEach((condition) => {
-      const option = CONDITION_OPTIONS.find((opt) => opt.value === condition)
-      if (option) {
-        chips.push({
-          label: `Condition: ${option.label}`,
-          onRemove: () =>
-            setFilters((prev) => ({
-              ...prev,
-              overallCondition: prev.overallCondition?.filter((c) => c !== condition),
-            })),
-        })
-      }
-    })
+  const addArrayFilter = (key: "severity" | "inspectionType" | "condition", value: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: [...prev[key], value],
+    }))
+  }
 
-    return chips
-  }, [filters])
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Search is triggered automatically by the debounced query
+  const removeArrayFilter = (key: "severity" | "inspectionType" | "condition", value: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: prev[key].filter((item) => item !== value),
+    }))
   }
 
   const clearAllFilters = () => {
-    setFilters({})
+    setFilters((prev) => ({
+      ...prev,
+      severity: [],
+      dateRange: { start: "", end: "" },
+      inspectionType: [],
+      condition: [],
+    }))
   }
 
-  if (!tenant) {
+  const activeFilterCount = useMemo(() => {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin" />
-          <p className="mt-2 text-sm text-muted-foreground">Loading tenant context...</p>
-        </div>
-      </div>
+      filters.severity.length +
+      filters.inspectionType.length +
+      filters.condition.length +
+      (filters.dateRange.start ? 1 : 0) +
+      (filters.dateRange.end ? 1 : 0)
     )
-  }
+  }, [filters])
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="space-y-4">
-        <h1 className="text-3xl font-bold">Search Inspections</h1>
+    <ProtectedLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Global Search</h1>
+          <p className="text-muted-foreground">Search across inspections, estimates, bookings, and damage records</p>
+        </div>
 
-        {/* Search Form */}
-        <form onSubmit={handleSearch} className="space-y-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+        {/* Search Input */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                type="text"
-                placeholder="Search inspections, damages, vehicles..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                placeholder="Search for vehicles, customers, damage types, or any content..."
+                value={filters.query}
+                onChange={(e) => updateFilter("query", e.target.value)}
+                className="pl-10 text-base"
               />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2"
-            >
-              <Filter className="h-4 w-4" />
-              Filters
-            </Button>
-          </div>
+          </CardContent>
+        </Card>
 
-          {/* Active Filter Chips */}
-          {activeFilters.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Active filters:</span>
-              {activeFilters.map((filter, index) => (
-                <FilterChip key={index} label={filter.label} onRemove={filter.onRemove} color={filter.color} />
-              ))}
-              <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-xs">
-                Clear all
-              </Button>
+        {/* Filters */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 && <Badge variant="secondary">{activeFilterCount}</Badge>}
+              </CardTitle>
+              {activeFilterCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearAllFilters}>
+                  Clear All
+                </Button>
+              )}
             </div>
-          )}
-        </form>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Filter Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Severity</label>
+                <Select onValueChange={(value) => addArrayFilter("severity", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add severity filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {severityOptions
+                      .filter((option) => !filters.severity.includes(option.value))
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-        {/* Filters Panel */}
-        {showFilters && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Search Filters</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Severity Filter */}
-                <div className="space-y-3">
-                  <h4 className="font-medium">Severity</h4>
-                  {SEVERITY_OPTIONS.map((option) => (
-                    <div key={option.value} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`severity-${option.value}`}
-                        checked={filters.severity?.includes(option.value as any) || false}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setFilters((prev) => ({
-                              ...prev,
-                              severity: [...(prev.severity || []), option.value as any],
-                            }))
-                          } else {
-                            setFilters((prev) => ({
-                              ...prev,
-                              severity: prev.severity?.filter((s) => s !== option.value),
-                            }))
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor={`severity-${option.value}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        {option.label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Inspection Type</label>
+                <Select onValueChange={(value) => addArrayFilter("inspectionType", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add type filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {inspectionTypeOptions
+                      .filter((option) => !filters.inspectionType.includes(option.value))
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                {/* Inspection Type Filter */}
-                <div className="space-y-3">
-                  <h4 className="font-medium">Inspection Type</h4>
-                  {INSPECTION_TYPES.map((option) => (
-                    <div key={option.value} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`type-${option.value}`}
-                        checked={filters.inspectionType?.includes(option.value as any) || false}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setFilters((prev) => ({
-                              ...prev,
-                              inspectionType: [...(prev.inspectionType || []), option.value as any],
-                            }))
-                          } else {
-                            setFilters((prev) => ({
-                              ...prev,
-                              inspectionType: prev.inspectionType?.filter((t) => t !== option.value),
-                            }))
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor={`type-${option.value}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        {option.label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Condition</label>
+                <Select onValueChange={(value) => addArrayFilter("condition", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Add condition filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {conditionOptions
+                      .filter((option) => !filters.condition.includes(option.value))
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                {/* Condition Filter */}
-                <div className="space-y-3">
-                  <h4 className="font-medium">Overall Condition</h4>
-                  {CONDITION_OPTIONS.map((option) => (
-                    <div key={option.value} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`condition-${option.value}`}
-                        checked={filters.overallCondition?.includes(option.value as any) || false}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setFilters((prev) => ({
-                              ...prev,
-                              overallCondition: [...(prev.overallCondition || []), option.value as any],
-                            }))
-                          } else {
-                            setFilters((prev) => ({
-                              ...prev,
-                              overallCondition: prev.overallCondition?.filter((c) => c !== option.value),
-                            }))
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor={`condition-${option.value}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        {option.label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Filthiness Filter */}
-                <div className="space-y-3">
-                  <h4 className="font-medium">Filthiness Level</h4>
-                  {FILTHINESS_LEVELS.map((option) => (
-                    <div key={option.value} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`filthiness-${option.value}`}
-                        checked={filters.filthinessLevel?.includes(option.value as any) || false}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setFilters((prev) => ({
-                              ...prev,
-                              filthinessLevel: [...(prev.filthinessLevel || []), option.value as any],
-                            }))
-                          } else {
-                            setFilters((prev) => ({
-                              ...prev,
-                              filthinessLevel: prev.filthinessLevel?.filter((f) => f !== option.value),
-                            }))
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor={`filthiness-${option.value}`}
-                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        {option.label}
-                      </label>
-                    </div>
-                  ))}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Sort By</label>
+                <div className="flex gap-2">
+                  <Select value={filters.sortBy} onValueChange={(value: any) => updateFilter("sortBy", value)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="relevance">Relevance</SelectItem>
+                      <SelectItem value="date">Date</SelectItem>
+                      <SelectItem value="severity">Severity</SelectItem>
+                      <SelectItem value="score">Score</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateFilter("sortOrder", filters.sortOrder === "asc" ? "desc" : "asc")}
+                  >
+                    {filters.sortOrder === "asc" ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
+                  </Button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            </div>
 
-      {/* Results Section */}
-      {debouncedQuery && (
+            {/* Date Range */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Start Date</label>
+                <Input
+                  type="date"
+                  value={filters.dateRange.start}
+                  onChange={(e) => updateFilter("dateRange", { ...filters.dateRange, start: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">End Date</label>
+                <Input
+                  type="date"
+                  value={filters.dateRange.end}
+                  onChange={(e) => updateFilter("dateRange", { ...filters.dateRange, end: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Active Filter Chips */}
+            {activeFilterCount > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Active Filters</label>
+                <div className="flex flex-wrap gap-2">
+                  {filters.severity.map((severity) => (
+                    <FilterChip
+                      key={severity}
+                      label={`Severity: ${severity}`}
+                      onRemove={() => removeArrayFilter("severity", severity)}
+                      color={severityOptions.find((s) => s.value === severity)?.color}
+                    />
+                  ))}
+                  {filters.inspectionType.map((type) => (
+                    <FilterChip
+                      key={type}
+                      label={`Type: ${inspectionTypeOptions.find((t) => t.value === type)?.label}`}
+                      onRemove={() => removeArrayFilter("inspectionType", type)}
+                    />
+                  ))}
+                  {filters.condition.map((condition) => (
+                    <FilterChip
+                      key={condition}
+                      label={`Condition: ${condition}`}
+                      onRemove={() => removeArrayFilter("condition", condition)}
+                    />
+                  ))}
+                  {filters.dateRange.start && (
+                    <FilterChip
+                      label={`From: ${format(parseISO(filters.dateRange.start), "MMM d, yyyy")}`}
+                      onRemove={() => updateFilter("dateRange", { ...filters.dateRange, start: "" })}
+                    />
+                  )}
+                  {filters.dateRange.end && (
+                    <FilterChip
+                      label={`To: ${format(parseISO(filters.dateRange.end), "MMM d, yyyy")}`}
+                      onRemove={() => updateFilter("dateRange", { ...filters.dateRange, end: "" })}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Search Results */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-semibold">
-                Search Results
-                {searchResults && (
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    ({searchResults.totalFound} found)
-                  </span>
-                )}
-              </h2>
-            </div>
-
-            {/* Sort Controls */}
-            <div className="flex items-center gap-2">
-              <Select value={sortBy} onValueChange={(value: SortOption) => setSortBy(value)}>
-                <SelectTrigger className="w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="relevance">Relevance</SelectItem>
-                  <SelectItem value="date">Date</SelectItem>
-                  <SelectItem value="damage_count">Damage Count</SelectItem>
-                  <SelectItem value="repair_cost">Repair Cost</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
-                aria-label={`Sort ${sortDirection === "asc" ? "descending" : "ascending"}`}
-              >
-                {sortDirection === "asc" ? <SortAsc className="h-4 w-4" /> : <SortDesc className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <Loader2 className="mx-auto h-8 w-8 animate-spin" />
-                <p className="mt-2 text-sm text-muted-foreground">Searching...</p>
-              </div>
-            </div>
-          ) : error ? (
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>Search failed. Please try again.</AlertDescription>
-            </Alert>
-          ) : searchResults?.results.length === 0 ? (
+          {!filters.query.trim() ? (
             <Card>
-              <CardContent className="flex flex-col items-center justify-center h-64">
-                <Search className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">No results found</h3>
-                <p className="text-sm text-muted-foreground text-center">Try adjusting your search terms or filters</p>
+              <CardContent className="pt-6 text-center">
+                <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Start Your Search</h3>
+                <p className="text-muted-foreground">
+                  Enter keywords to search across all your inspection data, estimates, and bookings.
+                </p>
+              </CardContent>
+            </Card>
+          ) : isLoading ? (
+            <SearchResultsSkeleton />
+          ) : error ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Search failed. Please try again or contact support if the problem persists.
+              </AlertDescription>
+            </Alert>
+          ) : searchResults?.results?.length === 0 ? (
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Results Found</h3>
+                <p className="text-muted-foreground mb-4">
+                  No results found for "{filters.query}". Try adjusting your search terms or filters.
+                </p>
+                <Button variant="outline" onClick={clearAllFilters}>
+                  Clear Filters
+                </Button>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-4">
-              {searchResults?.results.map((result, index) => (
-                <SearchResultCard key={`${result.inspection._id}-${index}`} result={result} />
-              ))}
-            </div>
+            <>
+              {/* Results Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold">Search Results</h2>
+                  <Badge variant="secondary">{searchResults?.total || 0} results</Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">Found in {searchResults?.searchTime || 0}ms</div>
+              </div>
+
+              {/* Results List */}
+              <div className="space-y-4">
+                {searchResults?.results?.map((result: SearchResult) => (
+                  <SearchResultCard key={result.id} result={result} />
+                ))}
+              </div>
+
+              {/* Load More */}
+              {searchResults?.hasMore && (
+                <div className="text-center">
+                  <Button variant="outline">Load More Results</Button>
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
-
-      {/* Empty State */}
-      {!debouncedQuery && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center h-64">
-            <Search className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Search Inspections</h3>
-            <p className="text-sm text-muted-foreground text-center">
-              Enter search terms to find inspections, damages, and vehicle records
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      </div>
+    </ProtectedLayout>
   )
 }

@@ -3,26 +3,13 @@
 import type React from "react"
 
 import { useState, useRef } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Camera, Upload, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
+import { Camera, Scan, Upload, CheckCircle, AlertTriangle } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
-
-interface VINScannerProps {
-  isOpen: boolean
-  onClose: () => void
-  onVinScanned: (vinData: {
-    vin: string
-    make: string
-    model: string
-    year: number
-    bodyClass?: string
-    engineSize?: string
-    fuelType?: string
-  }) => void
-}
 
 interface VINData {
   vin: string
@@ -34,110 +21,23 @@ interface VINData {
   fuelType?: string
 }
 
-export function VINScanner({ isOpen, onClose, onVinScanned }: VINScannerProps) {
-  const [isScanning, setIsScanning] = useState(false)
-  const [scannedImage, setScannedImage] = useState<string | null>(null)
-  const [extractedVin, setExtractedVin] = useState<string>("")
-  const [vinData, setVinData] = useState<VINData | null>(null)
-  const [error, setError] = useState<string>("")
+interface VINScannerProps {
+  onVINScanned: (vinData: VINData) => void
+}
 
+export function VINScanner({ onVINScanned }: VINScannerProps) {
+  const [isScanning, setIsScanning] = useState(false)
+  const [manualVIN, setManualVIN] = useState("")
+  const [isDecoding, setIsDecoding] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Mock OCR function - in production, integrate with actual OCR service
-  const extractVinFromImage = async (imageBlob: Blob): Promise<string> => {
-    // Simulate OCR processing
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-
-    // Mock VIN extraction - in production, use actual OCR
-    const mockVins = ["1HGBH41JXMN109186", "2T3BFREV8DW123456", "WBAVA31070PJ12345", "1FTFW1ET5DFC12345"]
-
-    return mockVins[Math.floor(Math.random() * mockVins.length)]
-  }
-
-  // Mock VIN decoding - in production, use vPIC API
-  const decodeVin = async (vin: string): Promise<VINData> => {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    // Mock decoded data
-    const mockVehicleData: Record<string, VINData> = {
-      "1HGBH41JXMN109186": {
-        vin,
-        make: "Honda",
-        model: "Accord",
-        year: 2021,
-        bodyClass: "Sedan",
-        engineSize: "2.0L",
-        fuelType: "Gasoline",
-      },
-      "2T3BFREV8DW123456": {
-        vin,
-        make: "Toyota",
-        model: "RAV4",
-        year: 2020,
-        bodyClass: "SUV",
-        engineSize: "2.5L",
-        fuelType: "Gasoline",
-      },
-      default: {
-        vin,
-        make: "Generic",
-        model: "Vehicle",
-        year: 2020,
-        bodyClass: "Sedan",
-        engineSize: "2.0L",
-        fuelType: "Gasoline",
-      },
-    }
-
-    return mockVehicleData[vin] || mockVehicleData["default"]
-  }
-
-  const handleImageUpload = async (file: File) => {
-    setIsScanning(true)
-    setError("")
-
+  const startCamera = async () => {
     try {
-      // Create preview
-      const imageUrl = URL.createObjectURL(file)
-      setScannedImage(imageUrl)
-
-      // Extract VIN using OCR
-      const extractedVin = await extractVinFromImage(file)
-      setExtractedVin(extractedVin)
-
-      // Decode VIN to get vehicle data
-      const vehicleData = await decodeVin(extractedVin)
-      setVinData(vehicleData)
-
-      toast({
-        title: "VIN scanned successfully",
-        description: `Found: ${vehicleData.year} ${vehicleData.make} ${vehicleData.model}`,
-      })
-    } catch (error) {
-      setError("Failed to scan VIN. Please try again or enter manually.")
-      toast({
-        title: "Scan failed",
-        description: "Could not extract VIN from image",
-        variant: "destructive",
-      })
-    } finally {
-      setIsScanning(false)
-    }
-  }
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      handleImageUpload(file)
-    }
-  }
-
-  const startCameraCapture = async () => {
-    try {
+      setIsScanning(true)
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }, // Use back camera on mobile
+        video: { facingMode: "environment" },
       })
 
       if (videoRef.current) {
@@ -145,226 +45,251 @@ export function VINScanner({ isOpen, onClose, onVinScanned }: VINScannerProps) {
         videoRef.current.play()
       }
     } catch (error) {
+      console.error("Camera access failed:", error)
       toast({
-        title: "Camera access denied",
-        description: "Please allow camera access to scan VIN",
+        title: "Camera Access Failed",
+        description: "Please allow camera access or use manual VIN entry",
         variant: "destructive",
       })
+      setIsScanning(false)
     }
   }
 
-  const captureImage = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current
-      const canvas = canvasRef.current
-      const context = canvas.getContext("2d")
-
-      if (context) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        context.drawImage(video, 0, 0)
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              handleImageUpload(new File([blob], "vin-capture.jpg", { type: "image/jpeg" }))
-            }
-          },
-          "image/jpeg",
-          0.8,
-        )
-
-        // Stop camera
-        const stream = video.srcObject as MediaStream
-        stream?.getTracks().forEach((track) => track.stop())
-      }
-    }
-  }
-
-  const handleConfirm = () => {
-    if (vinData) {
-      onVinScanned(vinData)
-      handleClose()
-    }
-  }
-
-  const handleClose = () => {
-    // Clean up
-    if (scannedImage) {
-      URL.revokeObjectURL(scannedImage)
-    }
-
-    // Stop camera if active
+  const stopCamera = () => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream
       stream.getTracks().forEach((track) => track.stop())
+      videoRef.current.srcObject = null
+    }
+    setIsScanning(false)
+  }
+
+  const captureVIN = async () => {
+    if (!videoRef.current || !canvasRef.current) return
+
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    const context = canvas.getContext("2d")
+
+    if (!context) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    context.drawImage(video, 0, 0)
+
+    // Convert canvas to blob and process with OCR
+    canvas.toBlob(
+      async (blob) => {
+        if (blob) {
+          await processVINImage(blob)
+        }
+      },
+      "image/jpeg",
+      0.8,
+    )
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      await processVINImage(file)
+    }
+  }
+
+  const processVINImage = async (imageBlob: Blob) => {
+    setIsDecoding(true)
+
+    try {
+      // Simulate OCR processing - in real implementation, use Tesseract.js or cloud OCR
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Mock VIN extraction
+      const mockVIN = "1HGBH41JXMN109186"
+      await decodeVIN(mockVIN)
+    } catch (error) {
+      console.error("VIN extraction failed:", error)
+      toast({
+        title: "VIN Extraction Failed",
+        description: "Could not read VIN from image. Please try again or enter manually.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDecoding(false)
+      stopCamera()
+    }
+  }
+
+  const decodeVIN = async (vin: string) => {
+    if (!vin || vin.length !== 17) {
+      toast({
+        title: "Invalid VIN",
+        description: "VIN must be exactly 17 characters long",
+        variant: "destructive",
+      })
+      return
     }
 
-    // Reset state
-    setScannedImage(null)
-    setExtractedVin("")
-    setVinData(null)
-    setError("")
-    setIsScanning(false)
+    setIsDecoding(true)
 
-    onClose()
+    try {
+      // Call NHTSA vPIC API for VIN decoding
+      const response = await fetch(`https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vin}?format=json`)
+
+      if (!response.ok) {
+        throw new Error("VIN decoding service unavailable")
+      }
+
+      const data = await response.json()
+      const results = data.Results
+
+      // Extract relevant information
+      const vinData: VINData = {
+        vin: vin.toUpperCase(),
+        make: getVINValue(results, "Make") || "",
+        model: getVINValue(results, "Model") || "",
+        year: Number.parseInt(getVINValue(results, "Model Year") || "0"),
+        bodyClass: getVINValue(results, "Body Class"),
+        engineSize: getVINValue(results, "Engine Number of Cylinders"),
+        fuelType: getVINValue(results, "Fuel Type - Primary"),
+      }
+
+      if (!vinData.make || !vinData.model || !vinData.year) {
+        throw new Error("Could not decode VIN - invalid or incomplete data")
+      }
+
+      onVINScanned(vinData)
+
+      toast({
+        title: "VIN Decoded Successfully",
+        description: `Found: ${vinData.year} ${vinData.make} ${vinData.model}`,
+      })
+    } catch (error) {
+      console.error("VIN decoding failed:", error)
+      toast({
+        title: "VIN Decoding Failed",
+        description: error instanceof Error ? error.message : "Please check the VIN and try again",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDecoding(false)
+    }
+  }
+
+  const getVINValue = (results: any[], variableName: string): string | null => {
+    const result = results.find((r) => r.Variable === variableName)
+    return result?.Value || null
+  }
+
+  const handleManualSubmit = () => {
+    if (manualVIN.length === 17) {
+      decodeVIN(manualVIN)
+    }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Camera className="h-5 w-5" />
-            VIN Scanner
-          </DialogTitle>
-        </DialogHeader>
+    <div className="space-y-6">
+      {/* Camera Scanner */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="text-center space-y-4">
+            <h4 className="text-lg font-semibold">Scan VIN with Camera</h4>
 
-        <div className="space-y-6">
-          {/* Camera/Upload Options */}
-          {!scannedImage && !isScanning && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
-                <CardContent className="p-6 text-center">
-                  <Camera className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="font-medium mb-2">Use Camera</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Capture VIN directly with your camera</p>
-                  <Button onClick={startCameraCapture} className="w-full">
-                    Open Camera
+            {!isScanning ? (
+              <div className="space-y-4">
+                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+                  <Camera className="w-12 h-12 text-blue-500" />
+                </div>
+                <p className="text-gray-600">Point your camera at the VIN barcode or number</p>
+                <div className="flex gap-2 justify-center">
+                  <Button onClick={startCamera} disabled={isDecoding}>
+                    <Camera className="w-4 h-4 mr-2" />
+                    Start Camera
                   </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-6 text-center">
-                  <Upload className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="font-medium mb-2">Upload Image</h3>
-                  <p className="text-sm text-muted-foreground mb-4">Upload a photo of the VIN</p>
-                  <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full">
-                    Choose File
+                  <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isDecoding}>
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Image
                   </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* Camera View */}
-          {videoRef.current?.srcObject && !scannedImage && (
-            <div className="space-y-4">
-              <div className="relative">
-                <video ref={videoRef} className="w-full rounded-lg" playsInline />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="border-2 border-white border-dashed rounded-lg p-4 bg-black/20">
-                    <p className="text-white text-sm">Position VIN in this area</p>
-                  </div>
                 </div>
               </div>
-              <Button onClick={captureImage} className="w-full">
-                <Camera className="h-4 w-4 mr-2" />
-                Capture VIN
-              </Button>
-            </div>
-          )}
-
-          {/* Processing State */}
-          {isScanning && (
-            <div className="text-center py-8">
-              <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin" />
-              <p className="text-sm text-muted-foreground">Scanning and decoding VIN...</p>
-            </div>
-          )}
-
-          {/* Scanned Image */}
-          {scannedImage && !isScanning && (
-            <div className="space-y-4">
-              <img
-                src={scannedImage || "/placeholder.svg"}
-                alt="Scanned VIN"
-                className="w-full max-h-64 object-contain rounded-lg border"
-              />
-
-              {extractedVin && (
-                <div className="p-4 bg-muted rounded-lg">
-                  <p className="text-sm font-medium">Extracted VIN:</p>
-                  <p className="font-mono text-lg">{extractedVin}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Vehicle Data */}
-          {vinData && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                  <h3 className="font-medium">Vehicle Information</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Make</p>
-                    <p className="font-medium">{vinData.make}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Model</p>
-                    <p className="font-medium">{vinData.model}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Year</p>
-                    <p className="font-medium">{vinData.year}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Body Class</p>
-                    <p className="font-medium">{vinData.bodyClass || "N/A"}</p>
-                  </div>
-                  {vinData.engineSize && (
-                    <div>
-                      <p className="text-muted-foreground">Engine</p>
-                      <p className="font-medium">{vinData.engineSize}</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative">
+                  <video ref={videoRef} className="w-full max-w-md mx-auto rounded-lg" autoPlay playsInline muted />
+                  <div className="absolute inset-0 border-2 border-blue-500 rounded-lg pointer-events-none">
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-16 border-2 border-white rounded">
+                      <div className="absolute -top-2 -left-2 w-4 h-4 border-l-2 border-t-2 border-white"></div>
+                      <div className="absolute -top-2 -right-2 w-4 h-4 border-r-2 border-t-2 border-white"></div>
+                      <div className="absolute -bottom-2 -left-2 w-4 h-4 border-l-2 border-b-2 border-white"></div>
+                      <div className="absolute -bottom-2 -right-2 w-4 h-4 border-r-2 border-b-2 border-white"></div>
                     </div>
-                  )}
-                  {vinData.fuelType && (
-                    <div>
-                      <p className="text-muted-foreground">Fuel Type</p>
-                      <p className="font-medium">{vinData.fuelType}</p>
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Error State */}
-          {error && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Actions */}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose} className="flex-1 bg-transparent">
-              Cancel
-            </Button>
-            {vinData && (
-              <Button onClick={handleConfirm} className="flex-1">
-                Use This Vehicle
-              </Button>
+                <p className="text-sm text-gray-600">Align the VIN within the frame and capture</p>
+                <div className="flex gap-2 justify-center">
+                  <Button onClick={captureVIN} disabled={isDecoding}>
+                    <Scan className="w-4 h-4 mr-2" />
+                    {isDecoding ? "Processing..." : "Capture VIN"}
+                  </Button>
+                  <Button variant="outline" onClick={stopCamera}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* Hidden canvas for image capture */}
-        <canvas ref={canvasRef} className="hidden" />
-      </DialogContent>
-    </Dialog>
+      {/* Manual VIN Entry */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            <h4 className="text-lg font-semibold text-center">Enter VIN Manually</h4>
+            <div>
+              <Label htmlFor="manual-vin">Vehicle Identification Number (VIN)</Label>
+              <Input
+                id="manual-vin"
+                value={manualVIN}
+                onChange={(e) => setManualVIN(e.target.value.toUpperCase())}
+                placeholder="Enter 17-character VIN"
+                maxLength={17}
+                className="font-mono"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                VIN is typically found on the dashboard, driver's side door, or registration
+              </p>
+            </div>
+            <Button onClick={handleManualSubmit} disabled={manualVIN.length !== 17 || isDecoding} className="w-full">
+              {isDecoding ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  Decoding VIN...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Decode VIN
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Hidden file input */}
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+
+      {/* Hidden canvas for image processing */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* VIN Format Help */}
+      <Alert>
+        <AlertTriangle className="h-4 w-4" />
+        <AlertDescription>
+          <strong>VIN Location Tips:</strong> Look for the 17-character VIN on your dashboard (visible through
+          windshield), driver's side door jamb, or vehicle registration documents.
+        </AlertDescription>
+      </Alert>
+    </div>
   )
 }

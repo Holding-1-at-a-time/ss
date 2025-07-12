@@ -1,18 +1,21 @@
 "use client"
 
 import { ClerkProvider } from "@clerk/nextjs"
-import type { ReactNode } from "react"
+import type React from "react"
 
-interface ClerkProviderWrapperProps {
-  children: ReactNode
-}
-
-export function ClerkProviderWrapper({ children }: ClerkProviderWrapperProps) {
+/**
+ * Wraps ClerkProvider but gracefully degrades when
+ * NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is not set (e.g. local preview).
+ */
+export function ClerkProviderWrapper({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
-  // If no Clerk key is provided, render children directly (for development/preview)
+  // If no key, skip Clerk entirely to avoid runtime error.
   if (!publishableKey) {
-    console.warn("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY not found. Clerk authentication disabled.")
     return <>{children}</>
   }
 

@@ -12,7 +12,8 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Slick Solutions - AI-Powered Vehicle Inspection & Auto Detailing",
-  description: "Multi-tenant SaaS platform for modern auto detailing and automotive inspection workflows",
+  description:
+    "Multi-tenant SaaS platform for vehicle inspection, damage detection, and auto detailing services with AI-powered pricing.",
     generator: 'v0.dev'
 }
 
@@ -22,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en">
       <body className={inter.className}>
         <ClerkProviderWrapper>
           <ConvexClientProvider>

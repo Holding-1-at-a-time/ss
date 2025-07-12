@@ -1,30 +1,41 @@
-# ss
+# Slick Solutions – AI-Powered, Multi-Tenant SaaS for Vehicle Inspection & Auto Detailing
 
-*Automatically synced with your [v0.dev](https://v0.dev) deployments*
+**Slick Solutions** is a multi-tenant, AI-powered SaaS platform designed for modern auto detailing and automotive inspection workflows. It streamlines vehicle intake, damage detection, intelligent pricing, scheduling, and reporting—fully integrated with Convex’s real-time backend, Ollama models, and semantic memory.
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/holding-one-at-a-times-projects/v0-ss)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/AwJmGsYTR9s)
+---
 
-## Overview
+## 💻 Frontend Technology
 
-This repository will stay in sync with your deployed chats on [v0.dev](https://v0.dev).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.dev](https://v0.dev).
+| Technology | Purpose |
+|------------|---------|
+| **React Server Components (RSC)** | Scalable server-driven UI composition with isolated data boundaries |
+| **Vercel AI SDK** | Streaming responses, object streaming, multi-model orchestration |
+| **Tailwind CSS** | Utility-first styling for rapid, responsive design |
+| **shadcn/ui** | Accessible, headless components for polished, customizable UIs |
 
-## Deployment
+---
 
-Your project is live at:
+## 🚘 Vehicle Intake & Inspection
 
-**[https://vercel.com/holding-one-at-a-times-projects/v0-ss](https://vercel.com/holding-one-at-a-times-projects/v0-ss)**
+- **VIN Scanning via Camera** — Uses vPIC API for real-time decoding of vehicle specs (make, model, trim, engine, fuel type, body class).
+- **Photo Guidance Overlay** — Framing hints and quality thresholds for clean captures.
+- **Damage Detection Pipeline** — Powered by `llama3.2-vision`, detects dents, scratches, severity levels, and bounding boxes.
+- **Filthiness Scoring** — AI-based dirt segmentation informs cleaning labor and pricing.
+- **VIN Pre-Fill** — Auto-populates vehicle details based on decoded VIN.
 
-## Build your app
+---
 
-Continue building your app on:
+## 🧠 Semantic AI Integration
 
-**[https://v0.dev/chat/projects/AwJmGsYTR9s](https://v0.dev/chat/projects/AwJmGsYTR9s)**
+- **Inspection Embeddings** — Uses `mxbai-embed-large` to generate semantic vectors for each inspection.
+- **Convex RAG Component** — Stores per-chunk embeddings with indexable precision.
+- **Convex Vector Search** — Tenant-scoped similarity search for inspections and documentation retrieval.
 
-## How It Works
+---
 
-1. Create and modify your project using [v0.dev](https://v0.dev)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+## 🔗 Resources
+
+- Convex RAG Component Docs – https://www.convex.dev/components/rag
+- Llama3.2 Vision (Ollama) – https://ollama.com
+- Convex Schema Best Practices – https://docs.convex.dev/databases/schemas
+- OpenAI Embedding Quickstart – https://platform.openai.com/docs/guides/embeddings

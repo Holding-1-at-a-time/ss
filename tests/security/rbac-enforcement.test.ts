@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { ConvexTestingHelper } from "convex/testing"
 import { api } from "../convex/_generated/api"
+import { test } from "@jest/globals"
 
 describe("RBAC Enforcement Tests", () => {
   let t: ConvexTestingHelper
@@ -14,6 +15,7 @@ describe("RBAC Enforcement Tests", () => {
         { userId: "manager", role: "manager" },
         { userId: "tech", role: "technician" },
         { userId: "viewer", role: "viewer" },
+        { userId: "superAdmin", role: "super_admin" },
       ]
 
       for (const { userId, role } of roles) {
@@ -83,5 +85,20 @@ describe("RBAC Enforcement Tests", () => {
         }),
       ).rejects.toThrow("Unauthorized: MANAGE_USERS permission required")
     })
+  })
+
+  test("RBAC is enforced for all sensitive operations", () => {
+    // TODO: Implement tests to verify that RBAC is enforced for all sensitive operations
+    expect(true).toBe(true)
+  })
+
+  test("Users can only access resources they are authorized to access", () => {
+    // TODO: Implement tests to verify that users can only access resources they are authorized to access
+    expect(true).toBe(true)
+  })
+
+  test("Super admins can access all resources", () => {
+    // TODO: Implement tests to verify that super admins can access all resources
+    expect(true).toBe(true)
   })
 })

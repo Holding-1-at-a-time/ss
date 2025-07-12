@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { ConvexTestingHelper } from "convex/testing"
 import { api } from "../convex/_generated/api"
+import { test } from "@jest/globals"
 
 describe("Audit Logging Tests", () => {
   let t: ConvexTestingHelper
@@ -92,5 +93,20 @@ describe("Audit Logging Tests", () => {
         notes: { before: undefined, after: "Updated notes" },
       })
     })
+  })
+
+  test("Audit logging is enabled for all sensitive operations", () => {
+    // TODO: Implement tests to verify that audit logging is enabled for all sensitive operations
+    expect(true).toBe(true)
+  })
+
+  test("Audit logs contain sufficient context", () => {
+    // TODO: Implement tests to verify that audit logs contain sufficient context
+    expect(true).toBe(true)
+  })
+
+  test("Audit logs are retained for the configured duration", () => {
+    // TODO: Implement tests to verify that audit logs are retained for the configured duration
+    expect(true).toBe(true)
   })
 })

@@ -1,5 +1,6 @@
 "use client"
-import { useState } from "react"
+
+import React, { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -178,7 +179,7 @@ function ShopSettingsTab() {
   })
 
   // Initialize form with fetched data
-  useState(() => {
+  React.useEffect(() => {
     if (settings) {
       form.reset(settings)
     }
@@ -338,7 +339,7 @@ function ShopSettingsTab() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Country</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value || "US"}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select country" />
@@ -426,7 +427,7 @@ function ShopSettingsTab() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Timezone</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value || "America/New_York"}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />
@@ -450,7 +451,7 @@ function ShopSettingsTab() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Currency</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value || "USD"}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />

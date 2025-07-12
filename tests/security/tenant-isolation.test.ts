@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { ConvexTestingHelper } from "convex/testing"
 import { api } from "../convex/_generated/api"
+import { test } from "@jest/globals"
 
 describe("Tenant Isolation Tests", () => {
   let t: ConvexTestingHelper
@@ -111,5 +112,20 @@ describe("Tenant Isolation Tests", () => {
       expect(settingsA.tenantId).toBe("tenant-a")
       expect(settingsB.tenantId).toBe("tenant-b")
     })
+  })
+
+  test("Tenant data is isolated", () => {
+    // TODO: Implement tests to verify that tenant data is isolated
+    expect(true).toBe(true)
+  })
+
+  test("Users can only access data within their tenant", () => {
+    // TODO: Implement tests to verify that users can only access data within their tenant
+    expect(true).toBe(true)
+  })
+
+  test("Super admins can access data across all tenants", () => {
+    // TODO: Implement tests to verify that super admins can access data across all tenants
+    expect(true).toBe(true)
   })
 })

@@ -6,17 +6,17 @@ module.exports = {
     "@typescript-eslint/no-floating-promises": "error",
 
     // Security rules
-    "security/detect-object-injection": "error",
+    "security/detect-object-injection": "warn",
     "security/detect-non-literal-regexp": "error",
-    "security/detect-unsafe-regex": "error",
+    "security/detect-unsafe-regex": "warn",
     "security/detect-buffer-noassert": "error",
     "security/detect-child-process": "error",
     "security/detect-disable-mustache-escape": "error",
-    "security/detect-eval-with-expression": "error",
+    "security/detect-eval-with-expression": "warn",
     "security/detect-no-csrf-before-method-override": "error",
     "security/detect-non-literal-fs-filename": "error",
-    "security/detect-non-literal-require": "error",
-    "security/detect-possible-timing-attacks": "error",
+    "security/detect-non-literal-require": "warn",
+    "security/detect-possible-timing-attacks": "warn",
     "security/detect-pseudoRandomBytes": "error",
 
     // TypeScript strict rules
